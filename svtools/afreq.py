@@ -1,10 +1,12 @@
 import argparse, sys
 from svtools.vcf.file import Vcf
 from svtools.vcf.variant import Variant
+import cyvcf2
 
 class UpdateInfo(object):
-    def __init__(self, vcf_stream):
-        self.vcf_stream = vcf_stream
+    def __init__(self, vcf_filename, output_filename):
+        self.vcf_filename = vcf_filename
+        self.output_filename = output_filename
 
     def calc_msq(self, var):
             # Below is what was in vcfpaste, but what if multiple ALTs?
@@ -26,77 +28,35 @@ class UpdateInfo(object):
                 msq = '.'
             return msq
 
-    def execute(self, output_handle=sys.stdout):
-        in_header = True
-        header = []
-        vcf = Vcf()
-        vcf_out = output_handle
+    def execute(self):
+        vcf = cyvcf2.VCF(self.vcf_filename)
+        vcf.add_info_to_header({
+            'ID' : 'AF', 
+            'Number' : 'A', 
+            'Type' : 'Float', 
+            'Description' : 'Allele Frequency, for each ALT allele, in the same order as listed'
+            })
+        vcf.add_info_to_header({
+            'ID' : 'NSAMP',
+            'Number' : '1', 
+            'Type' : 'Integer',
+            'Description' : 'Number of samples with non-reference genotypes'
+            })
+        vcf.add_info_to_header({
+            'ID' : 'MSQ', 
+            'Number' : '1', 
+            'Type' : 'Float', 
+            'Description' : 'Mean sample quality of positively genotyped samples'
+            })
 
-        # read input VCF
-        for line in self.vcf_stream:
-            if in_header:
-                if line.startswith('##'):
-                    header.append(line) 
-                    continue
-                elif line.startswith('#CHROM'):
-                    v = line.rstrip().split('\t')
-                    header.append('\t'.join(v))
+        output = cyvcf2.Writer(self.output_filename, vcf)
 
-                    in_header = False
-                    vcf.add_header(header)
-                    
-                    vcf.add_info('AF', 'A', 'Float', 'Allele Frequency, for each ALT allele, in the same order as listed')
-                    vcf.add_info('NSAMP', '1', 'Integer', 'Number of samples with non-reference genotypes')
-                    vcf.add_info('MSQ', '1', 'Float', 'Mean sample quality of positively genotyped samples')
-
-                    # write header
-                    vcf_out.write(vcf.get_header() + '\n')
-                    #vcf_out.write('\t' + '\t'.join(v[8:]) + '\n')
-                continue
-
-            v = line.rstrip().split('\t')
-            var = Variant(v, vcf)
-
-            # extract genotypes from VCF
-            num_alt = len(var.alt.split(','))
-            alleles = [0] * (num_alt + 1)
-            num_samp = 0
-
-            gt = [var.genotype(s).get_format('GT') for s in var.sample_list]
-            for gt_string in gt:
-
-                if '.' in  gt_string:
-                    continue
-                gt = gt_string.split('/')
-                if len(gt) == 1:
-                    gt = gt_string.split('|')
-                gt = map(int, gt)
-
-                for i in xrange(len(gt)):
-                    alleles[gt[i]] += 1
-
-                # iterate the number of non-reference samples
-                if sum(gt) > 0:
-                    num_samp += 1
-
-            allele_sum = float(sum(alleles))
-            allele_freq = ['.'] * len(alleles)
-
-            # populate AF
-            if allele_sum > 0:
-                for i in xrange(len(alleles)):
-                    allele_freq[i] = alleles[i] / allele_sum
-                var.info['AF'] = ','.join(map(str, ['%.4g' % a for a in allele_freq[1:]]))
-            else:
-                var.info['AF'] = ','.join(map(str, allele_freq[1:]))
-            
-            # populate NSAMP
-            var.info['NSAMP'] = num_samp
-            var.info['MSQ'] = self.calc_msq(var)
-
-            # after all samples have been processed, write
-            vcf_out.write(var.get_var_string() + '\n')
-        vcf_out.close()
+        for variant in vcf:
+            af = variant.aaf
+            nsamp = variant.num_het + variant.num_hom_alt
+            variant.INFO['AF'] = str(af)
+            variant.INFO['NSAMP'] = str(nsamp)
+            output.write_record(variant)
 
 def description():
     return 'Add allele frequency information to a VCF file'
@@ -117,13 +77,9 @@ def run_from_args(args):
             parser.print_help()
             exit(1)
         else:
-            handle = sys.stdin
-    else:
-        handle = open(args.input_vcf, 'r')
-    updater = UpdateInfo(handle)
+            args.input_vcf = '-'
+    updater = UpdateInfo(args.input_vcf, '-')
     updater.execute()
-    if handle != sys.stdin:
-        handle.close()
 
 if __name__ == '__main__':
     parser = command_parser()
