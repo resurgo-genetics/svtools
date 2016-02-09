@@ -54,8 +54,14 @@ class UpdateInfo(object):
         for variant in vcf:
             af = variant.aaf
             nsamp = variant.num_het + variant.num_hom_alt
-            variant.INFO['AF'] = str(af)
+            variant.INFO['AF'] = '%0.4f' % af
             variant.INFO['NSAMP'] = str(nsamp)
+            msq = None
+            try:
+                msq = '%0.2f' % variant.msq
+            except ZeroDivisionError:
+                msq = '.'
+            variant.INFO['MSQ'] = msq
             output.write_record(variant)
 
 def description():
