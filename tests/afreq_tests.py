@@ -10,12 +10,12 @@ class IntegrationTest_afreq(TestCase):
     def run_integration_test(self):
         test_directory = os.path.dirname(os.path.abspath(__file__))
         test_data_dir = os.path.join(test_directory, 'test_data', 'afreq')
-        input = os.path.join(test_data_dir, 'input.vcf')
+        input = os.path.join(test_data_dir, 'input.vcf.gz')
         expected_result = os.path.join(test_data_dir, 'expected.vcf')
         temp_descriptor, temp_output_path = tempfile.mkstemp(suffix='.vcf')
         with open(input, 'r') as input_handle, os.fdopen(temp_descriptor, 'w') as output_handle:
-            updater = svtools.afreq.UpdateInfo(input_handle)
-            updater.execute(output_handle)
+            updater = svtools.afreq.UpdateInfo(input, temp_output_path)
+            updater.execute()
             expected_lines = open(expected_result).readlines()
             # set timestamp for diff
             expected_lines[1] = '##fileDate=' + time.strftime('%Y%m%d') + '\n'
