@@ -14,26 +14,29 @@ class Vcf(object):
 
     def add_header(self, header):
         for line in header:
-            if line.split('=')[0] == '##fileformat':
+            header_array = line.split('=')
+            if header_array[0] == '##fileformat':
                 self.file_format = line.rstrip().split('=')[1]
-            elif line.split('=')[0] == '##reference':
+            elif header_array[0] == '##reference':
                 self.reference = line.rstrip().split('=')[1]
-            elif line.split('=')[0] == '##INFO':
-                a = line[line.find('<')+1:line.find('>')]
-                r = re.compile(r'(?:[^,\"]|\"[^\"]*\")+')
-                self.add_info(*[b.split('=')[1] for b in r.findall(a)])
-            elif line.split('=')[0] == '##ALT':
-                a = line[line.find('<')+1:line.find('>')]
-                r = re.compile(r'(?:[^,\"]|\"[^\"]*\")+')
-                self.add_alt(*[b.split('=')[1] for b in r.findall(a)])
-            elif line.split('=')[0] == '##FORMAT':
-                a = line[line.find('<')+1:line.find('>')]
-                r = re.compile(r'(?:[^,\"]|\"[^\"]*\")+')
-                self.add_format(*[b.split('=')[1] for b in r.findall(a)])
             elif line[0] == '#' and line[1] != '#':
                 self.sample_list = line.rstrip().split('\t')[9:]
                 for i in xrange(0, len(self.sample_list)):
                     self.sample_indices[self.sample_list[i]] = i + 9
+            else:
+                # Handle if line contains any compatible header lines
+                self._add_meta(line, header_array)
+
+    def _add_meta(self, line, header_array):
+        a = line[line.find('<')+1:line.rfind('>')]
+        r = re.compile(r'(?:[^,\"]|\"[^\"]*\")+')
+        args = [b.split('=')[1] for b in r.findall(a)]
+        if header_array[0] == '##INFO':
+            self.add_info(*args)
+        elif header_array[0] == '##ALT':
+            self.add_alt(*args)
+        elif header_array[0] == '##FORMAT':
+            self.add_format(*args)
 
     # return the VCF header
     def get_header(self, include_samples=True):
