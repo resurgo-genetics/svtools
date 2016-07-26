@@ -1,8 +1,11 @@
+#!/bin/env python
+
 import sys
 import gzip
 import argparse
 from svtools.vcf.file import Vcf
-from svtools.bedpe import Bedpe
+from svtools.vcf.variant import Variant
+import svtools.utils as su
 
 def set_from_string(string):
     '''
@@ -10,109 +13,71 @@ def set_from_string(string):
     '''
     return set(string.split(","))
 
-def info_tag(bedpe, tag):
-    '''
-    Return contents of a tag in the INFO field.
-    Not general for boolean tags
-    Should move to bedpe class or a utility class
-    '''
-    result = re.split('=', ''.join(filter(lambda x: tag + '=' in x, bedpe.info.split(';'))))[1]
-    return result
-
-def add_based_on_sname(a_bedpe, b_bedpe):
-    a_set = set_from_string(info_tag(a_bedpe, 'SNAME'))
-    b_set = set_from_string(info_tag(b_bedpe, 'SNAME'))
+def add_based_on_sname(a, b_set):
+    a_set = set_from_string(a.get_info('SNAME'))
     if a_set & b_set: #If they share at least one element in the SNAME field
-        a_bedpe.cohort_vars[b_bedpe.name] = b_bedpe.af
         return True
     else:
         return False
 
-def search(aFile, bFile, bedpe_out, pass_prefix, complement):
-    bList = list()
-    headerObj = Vcf()
-        
-    if bFile == "stdin":
-        bData = sys.stdin
-    elif bFile.endswith('.gz'):
-        bData = gzip.open(bFile, 'rb')
-    else:
-        bData = open(bFile, 'r')
-    for bLine in bData:
-        if bLine.startswith(pass_prefix):
-            continue
-        bentry = Bedpe(bLine.rstrip().split('\t'))
-        bList.append(bentry)
-    
-    if aFile == "stdin":
-        aData = sys.stdin
-    elif aFile.endswith('.gz'):
-        aData = gzip.open(aFile, 'rb')
-    else:
-        aData = open(aFile, 'r')
+def load_filter_file(filter_file):
+    filter_list = list()
 
-    in_header = True    
-    header_lines = []
-    sample_list = None
-    for aLine in aData:
-        if pass_prefix is not None and aLine.startswith(pass_prefix):
-            if aLine[0] == '#' and aLine[1] != '#':
-                sample_list = aLine.rstrip().split('\t', 14)[-1]
-            else:
-                header_lines.append(aLine)
-            continue
+    vcf = Vcf()
+    header_lines = list()
+    in_header = True
+    for line in filter_file:
+        if in_header:
+            header_lines.append(line)
+            if line[0:6] == '#CHROM':
+                in_header = False
+                vcf.add_header(header_lines)
         else:
-            if in_header == True:
-                headerObj.add_header(header_lines)
+            v = line.rstrip().split('\t')
+            var = Variant(v, vcf)
+            filter_list.append((var.var_id, set_from_string(var.get_info('SNAME'))))
+    return filter_list
 
-                header = headerObj.get_header()
-                bedpe_out.write(header[:header.rfind('\n')] + '\n')                
-                if len(sample_list) > 0:
-                    bedpe_out.write('\t'.join(['#CHROM_A',
-                                               'START_A',
-                                               'END_A',
-                                               'CHROM_B',
-                                               'START_B',
-                                               'END_B',
-                                               'ID',
-                                               'QUAL',
-                                               'STRAND_A',
-                                               'STRAND_B',
-                                               'TYPE',
-                                               'FILTER',
-                                               'INFO_A','INFO_B',
-                                               sample_list]
-                                             ) + '\n')
-                else:
-                    bedpe_out.write('\t'.join(['#CHROM_A',
-                                               'START_A',
-                                               'END_A',
-                                               'CHROM_B',
-                                               'START_B',
-                                               'END_B',
-                                               'ID',
-                                               'QUAL',
-                                               'STRAND_A',
-                                               'STRAND_B',
-                                               'TYPE',
-                                               'FILTER',
-                                               'INFO_A','INFO_B']
-                                              ) + '\n')
-                in_header=False
-            a = Bedpe(aLine.rstrip().split('\t'))
-            for b in bList:
-                if add_based_on_sname(a, b) != complement:
-                    bedpe_out.write(aLine)
+def sname_filter(input_stream, filter_file, output_stream, complement):
+    filter_list = load_filter_file(filter_file)
+
+    vcf = Vcf()
+    in_header = True    
+    header_lines = list()
+    sample_list = None
+    for line in input_stream:
+        if in_header:
+            header_lines.append(line)
+            if line[0:6] == '#CHROM':
+                in_header = False
+                vcf.add_header(header_lines)
+                # FIXME This is insufficient for general use
+                vcf.add_info('FOUND', '.', 'String', 'Variant id in other file')
+                output_stream.write(vcf.get_header() + '\n')
+        else:
+            v = Variant(line.rstrip().split('\t'), vcf)
+            found = False
+            for f in filter_list:
+                if add_based_on_sname(v, f[1]):
+                    found = True
+                    value_string = ''
+                    try:
+                        value_string = ','.join(v.get_info('FOUND'), f[0])
+                    except KeyError:
+                        value_string = f[0]
+                    v.set_info('FOUND', value_string)
                     break
+            if found != complement:
+                output_stream.write(v.get_var_string() + '\n')
 
 def description():
-    return 'look for variants common between two BEDPE files'
+    return 'look for variants sharing the same original call between two VCF files'
 
 def add_arguments_to_parser(parser):
     parser.add_argument('-v', '--complement', action='store_true', dest='complement', default=False, help='return complement of overlap')
-    parser.add_argument("-a", "--aFile", dest="aFile", metavar='<BEDPE>', help="pruned, merged BEDPE (A file) or standard input (-a stdin).")
-    parser.add_argument("-b", "--bFile", dest="bFile", metavar='<BEDPE>', help="pruned merged BEDPE (B file) (-b stdin). For pruning use svtools prune")
-    parser.add_argument('-o', '--output', type=argparse.FileType('w'), metavar='<BEDPE>', default=sys.stdout, help='output BEDPE to write (default: stdout)')
+    parser.add_argument("-i", "--input", dest="input", metavar='<VCF>', help="VCF file containing variants to be output")
+    parser.add_argument("-f", "--filter", dest="filter_file", metavar='<VCF>', type=argparse.FileType('r'), help="VCF file containing variants used to determine if site should be output")
+    parser.add_argument('-o', '--output', type=argparse.FileType('w'), metavar='<VCF>', default=sys.stdout, help='output VCF to write (default: stdout)')
     parser.set_defaults(entry_point=run_from_args)
 
 def command_parser():
@@ -121,18 +86,8 @@ def command_parser():
     return parser
 
 def run_from_args(args):
-    pass_prefix = "#"
-    if args.aFile == None:
-        if sys.stdin.isatty():
-            sys.stderr.write('Please stream in input to this command or specify the file to read\n')
-            sys.exit(1)
-        else:
-            args.aFile = sys.stdin
-
-    try:
-        search(args.aFile, args.bFile, args.output, pass_prefix, complement)
-    except IOError as err:
-        sys.stderr.write("IOError " + str(err) + "\n");
+    with su.InputStream(args.input) as stream:
+        return sname_filter(stream, args.filter_file, args.output, args.complement)
 
 if __name__ == '__main__':
     parser = command_parser()
