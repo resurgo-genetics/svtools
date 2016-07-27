@@ -66,7 +66,6 @@ def sname_filter(input_stream, filter_file, output_stream, complement):
                     except KeyError:
                         value_string = f[0]
                     v.set_info('FOUND', value_string)
-                    break
             if found != complement:
                 output_stream.write(v.get_var_string() + '\n')
 
