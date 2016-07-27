@@ -14,6 +14,9 @@ def set_from_string(string):
     return set(string.split(","))
 
 def add_based_on_sname(a, b_set):
+    '''
+    Returns true if a pair of sname fields's have overlap
+    '''
     a_set = set_from_string(a.get_info('SNAME'))
     if a_set & b_set: #If they share at least one element in the SNAME field
         return True
@@ -21,6 +24,10 @@ def add_based_on_sname(a, b_set):
         return False
 
 def load_filter_file(filter_file):
+    '''
+    Read the file we're going to use as a filter to determine if lines should be output.
+    This returns a list containing tuples where the first item is the variant id and the second is the set of ids from sname.
+    '''
     filter_list = list()
 
     vcf = Vcf()
@@ -39,6 +46,9 @@ def load_filter_file(filter_file):
     return filter_list
 
 def sname_filter(input_stream, filter_file, output_stream, complement):
+    '''
+    This reads a VCF stream, determines if the line overlaps any from the filter_file by sname and outputs.
+    '''
     filter_list = load_filter_file(filter_file)
 
     vcf = Vcf()
