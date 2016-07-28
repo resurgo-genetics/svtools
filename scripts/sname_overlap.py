@@ -13,15 +13,16 @@ def set_from_string(string):
     '''
     return set(string.split(","))
 
-def add_based_on_sname(a, b_set):
+def overlapping_ids(query_set, filtering_sets):
     '''
-    Returns true if a pair of sname fields's have overlap
+    Return the ids for all sets in our list of possible overlapping sets.
+    filtering_sets is expected to be a tuple where index 0 is the name and index 1 is the set
     '''
-    a_set = set_from_string(a.get_info('SNAME'))
-    if a_set & b_set: #If they share at least one element in the SNAME field
-        return True
-    else:
-        return False
+    found = []
+    for f in filtering_sets:
+        if query_set & f[1]:
+            found.append(f[0])
+    return found
 
 def load_filter_file(filter_file):
     '''
@@ -66,17 +67,10 @@ def sname_filter(input_stream, filter_file, output_stream, complement):
                 output_stream.write(vcf.get_header() + '\n')
         else:
             v = Variant(line.rstrip().split('\t'), vcf)
-            found = False
-            for f in filter_list:
-                if add_based_on_sname(v, f[1]):
-                    found = True
-                    value_string = ''
-                    try:
-                        value_string = ','.join(v.get_info('FOUND'), f[0])
-                    except KeyError:
-                        value_string = f[0]
-                    v.set_info('FOUND', value_string)
-            if found != complement:
+            sname_set = set_from_string(v.get_info('SNAME'))
+            found = overlapping_ids(sname_set, filter_list)
+            if bool(found) != complement:
+                v.set_info('FOUND', ','.join(found))
                 output_stream.write(v.get_var_string() + '\n')
 
 def description():
