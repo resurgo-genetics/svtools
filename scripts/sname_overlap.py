@@ -11,7 +11,10 @@ def set_from_string(string):
     '''
     Convert a comma separated string to a set of strings
     '''
-    return set(string.split(","))
+    if string == '':
+        return set()
+    else:
+        return set(string.split(","))
 
 def overlapping_ids(query_set, filtering_sets):
     '''
