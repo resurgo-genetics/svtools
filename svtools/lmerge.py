@@ -16,6 +16,28 @@ def null_format_string(format_string):
     null_string = ':'.join(null_list)
     return null_string
 
+def clip_out_tag(info, tag_name):
+    start = info.find(tag_name)
+    end = info.find(';', start)
+    if end > -1:
+        info = info[:start] + info[end + 1:]
+    elif start > -1:
+        info = info[:start - 1]
+    return info
+
+def update_sname(info, var_id):
+    sname = None
+
+    start = info.find('SNAME=')
+    end = info.find(';', start)
+    if end > -1:
+        sname = info[start + 6:end]
+        info = info[:start] + info[start:end] + ':' + var_id + info[end:]
+    else:
+        sname = info[start + 6:]
+        info += ':' + var_id
+    return (info, sname)
+
 def print_var_line(l, genotypes=None):
     A = l.rstrip().split('\t')
 
@@ -148,39 +170,17 @@ def print_var_line(l, genotypes=None):
 def merge(BP, sample_order, v_id, use_product, include_genotypes=False):
     if len(BP) == 1:
         A = BP[0].l.rstrip().split('\t')
+
         #tack on id to SNAME
-        s_start=A[7].find('SNAME=')
-        s_end=A[7].find(';',s_start)
-        sname = None
-        if (s_end > -1):
-            sname = A[7][s_start + 6:s_end]
-            A[7] = A[7][:s_start] + \
-                    A[7][s_start:s_end] + \
-                    ':' + A[2] + \
-                    A[7][s_end:]
-        else:
-            sname = A[7][s_start + 6:]
-            A[7]+= ':' + A[2]
+        A[7], sname = update_sname(A[7], A[2])
 
         # reset the id to be unique in this file
         v_id += 1
         A[2] = str(v_id)
 
         #clip out old mate id
-        s_start=A[7].find('MATEID=')
-        s_end=A[7].find(';',s_start)
-        if (s_end > -1):
-            A[7] = A[7][:s_start] + A[7][s_end+1:]
-        elif (s_start > -1):
-            A[7] = A[7][:s_start]
-
-        #clip out old event id
-        s_start=A[7].find('EVENT=')
-        s_end=A[7].find(';', s_start)
-        if (s_end > -1):
-            A[7] = A[7][:s_start] + A[7][s_end+1:]
-        elif (s_start > -1):
-            A[7] = A[7][:s_start]
+        A[7] = clip_out_tag(A[7], 'MATEID=')
+        A[7] = clip_out_tag(A[7], 'EVENT=')
 
         #add new mate
         A[7]+= ';EVENT=' + A[2]

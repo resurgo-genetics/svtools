@@ -10,6 +10,15 @@ class LmergeUnitTest(TestCase):
         self.assertEqual(lmerge.null_format_string('GT:GQ:AD'), './.:.:.')
         self.assertEqual(lmerge.null_format_string('GQ:AD'), '.:.')
 
+    def test_clip_out_tag(self):
+        self.assertEqual(lmerge.clip_out_tag('SOMETAG=T;OTHERTAG=G', 'SOMETAG='), 'OTHERTAG=G')
+        self.assertEqual(lmerge.clip_out_tag('SOMETAG=T;OTHERTAG=G', 'OTHERTAG='), 'SOMETAG=T')
+        self.assertEqual(lmerge.clip_out_tag('SOMETAG=T;OTHERTAG=G', 'MISSINGTAG='), 'SOMETAG=T;OTHERTAG=G')
+
+    def test_update_sname(self):
+        self.assertEqual(lmerge.update_sname('SNAME=NAME;OTHERTAG', '12'), ('SNAME=NAME:12;OTHERTAG', 'NAME'))
+        self.assertEqual(lmerge.update_sname('OTHERTAG;SNAME=NAME', '12'), ('OTHERTAG;SNAME=NAME:12', 'NAME'))
+
 class LmergeIntegrationTest(TestCase):
     def run_integration_test(self):
         test_directory = os.path.dirname(os.path.abspath(__file__))
